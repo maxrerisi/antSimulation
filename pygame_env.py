@@ -1,9 +1,9 @@
 import random
 import pygame
-from global_settings import GLOBAL_WIDTH, GLOBAL_HEIGHT, FOOD_RADIUS, ANT_RADIUS, HILL_POSITION
+from global_settings import SCREEN_WIDTH, SCREEN_HEIGHT, FOOD_RADIUS, ANT_RADIUS, HILL_POSITION
 
 
-def display_screen(ants, food, width=GLOBAL_WIDTH, height=GLOBAL_HEIGHT):
+def display_screen(ants, food, width=SCREEN_WIDTH, height=SCREEN_HEIGHT):
     pygame.init()
     screen = pygame.display.set_mode((width, height))
     pygame.display.set_caption('Pygame Screen')

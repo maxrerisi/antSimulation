@@ -1,5 +1,5 @@
 import time
-from global_settings import ANT_SPEED, HILL_POSITION, GLOBAL_WIDTH, GLOBAL_HEIGHT, ANT_RADIUS, SQR_RADIUS_VISIBILITY, FOOD_RADIUS, FOOD_TO_REPRODUCE, TO_HOME_RANDOM_ANGLE, RANDOM_ANGLE
+from global_settings import ANT_SPEED, HILL_POSITION, SCREEN_WIDTH, SCREEN_HEIGHT, ANT_RADIUS, SQR_RADIUS_VISIBILITY, FOOD_RADIUS, FOOD_TO_REPRODUCE, TO_HOME_RANDOM_ANGLE, RANDOM_ANGLE, WIDTH, HEIGHT, SCALE_FACTOR, FONT_SIZE, FPS_UPDATE, ANT_COUNT, STUCK_THRESH, MOVE_CACHE, AMOUNT_OF_FOOD_TO_REPRODUCE
 import random
 import math
 import pygame
@@ -9,8 +9,9 @@ from phermone import Phermone
 from food_node import create_nodes
 
 pygame.init()
-screen = pygame.display.set_mode((GLOBAL_WIDTH, GLOBAL_HEIGHT))
+effective_grid = pygame.Surface((WIDTH, HEIGHT))
 pygame.display.set_caption('Pygame Screen')
+real_screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 
 
 class Ant():
@@ -21,6 +22,7 @@ class Ant():
         self.direction = random.uniform(0, 2*math.pi)
         self.has_food = False
         self.phermones = []
+        self.recent_moves = [(0,0) for _ in range(MOVE_CACHE)]
 
     def move(self):
         if self.has_food and square_distance(self.x, self.y, HILL_POSITION[0], HILL_POSITION[1]) < 10**2:
@@ -36,8 +38,12 @@ class Ant():
 
         self.x += self.speed * math.cos(self.direction)
         self.y += self.speed * math.sin(self.direction)
-        if self.x > GLOBAL_WIDTH or self.x < 0 or self.y > GLOBAL_HEIGHT or self.y < 0:
+        if self.x > SCREEN_WIDTH or self.x < 0 or self.y > SCREEN_HEIGHT or self.y < 0:
             self.direction -= math.pi
+        self.recent_moves.append((self.x, self.y))
+        if square_distance(*self.recent_moves[0], *self.recent_moves[-1]) < STUCK_THRESH:
+            self.direction_to_point(*HILL_POSITION)
+        self.recent_moves.pop(0)
 
     def direction_to_point(self, x, y):
         self.direction = math.atan2(y - self.y, x - self.x)
@@ -77,7 +83,7 @@ class Ant():
 
 # ANTS = [Ant(random.randint(0, GLOBAL_WIDTH), random.randint(
 #     0, GLOBAL_HEIGHT)) for _ in range(100)]
-ANTS = [Ant(*HILL_POSITION) for _ in range(100)]
+ANTS = [Ant(*HILL_POSITION) for _ in range(ANT_COUNT)]
 
 FOOD_COORDS = create_nodes()
 
@@ -90,11 +96,13 @@ while True:
         if square_distance(*HILL_POSITION, *f) < 75**2:
             FOOD_COORDS.remove(f)
             removed = True
-            FOOD_COORDS.append((random.randint(0, GLOBAL_WIDTH), random.randint(
-                0, GLOBAL_HEIGHT)))
+            FOOD_COORDS.append((random.randint(0, SCREEN_WIDTH), random.randint(
+                0, SCREEN_HEIGHT)))
     if not removed:
         break
 
+hill_food = 0
+last_delta_time = time.time()
 iterations = 0
 running = True
 while running:
@@ -102,37 +110,50 @@ while running:
         if event.type == pygame.QUIT:
             running = False
 
-    screen.fill((0, 0, 0))
+    effective_grid.fill((0, 0, 0))
 
     # draw anthill
-    pygame.draw.circle(screen, (255, 255, 0), HILL_POSITION, 10)
+    pygame.draw.circle(effective_grid, (255, 255, 0), HILL_POSITION, 10*SCALE_FACTOR*3//2)
 
     for food in FOOD_COORDS:
-        Food(*food).draw(screen=screen)
+        Food(*food).draw(screen=effective_grid)
 
     all_phermones = []
     for ant in ANTS:
         all_phermones.extend([(ph.x, ph.y) for ph in ant.phermones])
     for ant in ANTS:
-        ant.draw(screen)
-        ant.check_food(FOOD_COORDS)
+        ant.draw(effective_grid)
         ant.check_phermones(all_phermones)
+        ant.check_food(FOOD_COORDS)
         cache = ant.has_food
         ant.move()
         if not ant.has_food and cache and FOOD_TO_REPRODUCE:
-            ANTS.append(Ant(*HILL_POSITION))
+            hill_food += 1
+            # ANTS.append(Ant(*HILL_POSITION))
 
-    if iterations < 5:
-        time.sleep(0.5)
+    for _ in range(hill_food//AMOUNT_OF_FOOD_TO_REPRODUCE):
+        ANTS.append(Ant(*HILL_POSITION))
+    
+    hill_food -= (hill_food//AMOUNT_OF_FOOD_TO_REPRODUCE)*AMOUNT_OF_FOOD_TO_REPRODUCE
+
+    # if iterations < 5:
+    #     time.sleep(0.5)
+    
+    if iterations % FPS_UPDATE == 0:
+        new_time = time.time()
+        fps = ((new_time - last_delta_time)/FPS_UPDATE)**-1
+        last_delta_time = new_time
 
     iterations += 1
 
-    font = pygame.font.Font(None, 36)
+    font = pygame.font.Font(None, FONT_SIZE)
     foodleft = len(FOOD_COORDS)
     antsleft = len(ANTS)
-    text = f"Food remaining: {foodleft}\n Ants: {antsleft}"
+    text = f"Food remaining: {foodleft}\n Ants: {antsleft}\n Hill Food: {hill_food}\n Frames: {iterations}\n FPS: {fps:.2f}"
     text = font.render(text, True, (255, 255, 255))
-    screen.blit(text, (10, 10))
+    effective_grid.blit(text, (10, 10))
+    scaled_surface = pygame.transform.smoothscale(effective_grid, (SCREEN_WIDTH, SCREEN_HEIGHT))
+    real_screen.blit(scaled_surface, (0, 0))
     pygame.display.flip()
     # time.sleep(0.025)
     print(foodleft, antsleft)
