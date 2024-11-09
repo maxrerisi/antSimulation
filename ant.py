@@ -1,5 +1,5 @@
 import time
-from global_settings import ANT_SPEED, HILL_POSITION, SCREEN_WIDTH, SCREEN_HEIGHT, ANT_RADIUS, SQR_RADIUS_VISIBILITY, FOOD_RADIUS, FOOD_TO_REPRODUCE, TO_HOME_RANDOM_ANGLE, RANDOM_ANGLE, WIDTH, HEIGHT, SCALE_FACTOR, FONT_SIZE, FPS_UPDATE, ANT_COUNT, STUCK_THRESH, MOVE_CACHE, AMOUNT_OF_FOOD_TO_REPRODUCE
+from global_settings import ANT_SPEED, HILL_POSITION, SCREEN_WIDTH, SCREEN_HEIGHT, ANT_RADIUS, SQR_RADIUS_VISIBILITY, FOOD_RADIUS, FOOD_TO_REPRODUCE, TO_HOME_RANDOM_ANGLE, RANDOM_ANGLE, WIDTH, HEIGHT, SCALE_FACTOR, FONT_SIZE, FPS_UPDATE, ANT_COUNT, STUCK_THRESH, MOVE_CACHE, AMOUNT_OF_FOOD_TO_REPRODUCE, START_HEALTH
 import random
 import math
 import pygame
@@ -15,7 +15,7 @@ real_screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 
 
 class Ant():
-    def __init__(self, x, y):
+    def __init__(self, x, y, health = START_HEALTH):
         self.x = x
         self.y = y
         self.speed = ANT_SPEED if isinstance(ANT_SPEED, int) or isinstance(ANT_SPEED, float) else random.uniform(*ANT_SPEED)
@@ -23,6 +23,7 @@ class Ant():
         self.has_food = False
         self.phermones = []
         self.recent_moves = [(0,0) for _ in range(MOVE_CACHE)]
+        self.health = health
 
     def move(self):
         if self.has_food and square_distance(self.x, self.y, HILL_POSITION[0], HILL_POSITION[1]) < 10**2:
@@ -44,12 +45,15 @@ class Ant():
         if square_distance(*self.recent_moves[0], *self.recent_moves[-1]) < STUCK_THRESH:
             self.direction_to_point(*HILL_POSITION)
         self.recent_moves.pop(0)
+        self.health -= 0.1 if self.has_food else 1
 
     def direction_to_point(self, x, y):
         self.direction = math.atan2(y - self.y, x - self.x)
 
     def draw(self, screen):
-        color = (0, 255, 0) if self.has_food else (255, 255, 255)
+        clr = min(255*self.health/START_HEALTH, 255)
+        color = (0, 255, 0) if self.has_food else (clr,clr,clr)
+        color = (255,0,255) if self.health > START_HEALTH else color
         self.draw_phermones(screen)
         pygame.draw.circle(screen, color, (self.x, self.y), ANT_RADIUS)
 
@@ -83,23 +87,13 @@ class Ant():
 
 # ANTS = [Ant(random.randint(0, GLOBAL_WIDTH), random.randint(
 #     0, GLOBAL_HEIGHT)) for _ in range(100)]
-ANTS = [Ant(*HILL_POSITION) for _ in range(ANT_COUNT)]
-
+ANTS = [Ant(*HILL_POSITION) for _ in range(ANT_COUNT-1)]
+ANTS.append(Ant(*HILL_POSITION, health=10*START_HEALTH))
 FOOD_COORDS = create_nodes()
 
 
 # FOOD_COORDS = [(random.randint(0, GLOBAL_WIDTH), random.randint(
 #     0, GLOBAL_HEIGHT)) for _ in range(1000)]
-while True:
-    removed = False
-    for f in FOOD_COORDS:
-        if square_distance(*HILL_POSITION, *f) < 75**2:
-            FOOD_COORDS.remove(f)
-            removed = True
-            FOOD_COORDS.append((random.randint(0, SCREEN_WIDTH), random.randint(
-                0, SCREEN_HEIGHT)))
-    if not removed:
-        break
 
 hill_food = 0
 last_delta_time = time.time()
@@ -118,6 +112,7 @@ while running:
     for food in FOOD_COORDS:
         Food(*food).draw(screen=effective_grid)
 
+    max_life = 0
     all_phermones = []
     for ant in ANTS:
         all_phermones.extend([(ph.x, ph.y) for ph in ant.phermones])
@@ -130,7 +125,12 @@ while running:
         if not ant.has_food and cache and FOOD_TO_REPRODUCE:
             hill_food += 1
             # ANTS.append(Ant(*HILL_POSITION))
-
+        if ant.health > max_life:
+            max_life = ant.health
+        if ant.health <= 0:
+            ANTS.remove(ant)
+            continue
+    max_life = round(max_life,2)
     for _ in range(hill_food//AMOUNT_OF_FOOD_TO_REPRODUCE):
         ANTS.append(Ant(*HILL_POSITION))
     
@@ -149,13 +149,17 @@ while running:
     font = pygame.font.Font(None, FONT_SIZE)
     foodleft = len(FOOD_COORDS)
     antsleft = len(ANTS)
-    text = f"Food remaining: {foodleft}\n Ants: {antsleft}\n Hill Food: {hill_food}\n Frames: {iterations}\n FPS: {fps:.2f}"
+    if antsleft == 0:
+        print("All ants dead")
+        time.sleep(5)
+        break
+    text = f"Food: {foodleft}\n Ants: {antsleft}\n Hill Food: {hill_food}\n Frames: {iterations}\n FPS: {fps:.2f} \n Max Life: {max_life}"
     text = font.render(text, True, (255, 255, 255))
     effective_grid.blit(text, (10, 10))
     scaled_surface = pygame.transform.smoothscale(effective_grid, (SCREEN_WIDTH, SCREEN_HEIGHT))
     real_screen.blit(scaled_surface, (0, 0))
     pygame.display.flip()
     # time.sleep(0.025)
-    print(foodleft, antsleft)
+    print(foodleft, antsleft, hill_food, iterations, f"{fps:.2f}", max_life)
 
 pygame.quit()
